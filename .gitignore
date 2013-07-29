@@ -6,3 +6,4 @@ build
 *.class
 *.pyc
 *.pyo
+.swp

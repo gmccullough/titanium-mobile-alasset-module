@@ -104,34 +104,63 @@
     RELEASE_TO_NIL(assetUrlCallback);
     assetUrlCallback  = [onasset retain];
     
+    //ALAssetsLibraryAssetForURLResultBlock assetForURLResultBlock = ^(ALAsset *result)
     void (^assetForURLResultBlock)(ALAsset *) = ^(ALAsset *result)
     {
         if( result != nil )
-        {
+        {   
             ALAssetRepresentation *rep = [result defaultRepresentation];
             NSURL *url = [[result defaultRepresentation] url];
             NSString *sUrl = [url absoluteString];
-                UIImage *largeimage;
-                largeimage = [UIImage imageWithCGImage:[rep fullScreenImage]];
-                UIImage *thumbnail;
-                thumbnail   = [UIImage imageWithCGImage:[result thumbnail]];
+            //NSString *filename = [rep filename];
             
+            // Save the image to local app storage and return the filename
+            NSString *documentPath = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) objectAtIndex:0];
+            NSString* filename = [documentPath stringByAppendingPathComponent:[rep filename]];
             
-                NSDictionary *event = [NSDictionary
-                                       dictionaryWithObjectsAndKeys:
-                                       [[self exif:result] autorelease],
-                                       @"meta",
-                                       [[[TiBlob alloc] initWithImage:largeimage] autorelease],
-                                       @"image",
-                                       [[[TiBlob alloc] initWithImage:thumbnail] autorelease],
-                                       @"thumbnail",
-                                       sUrl,
-                                       @"url",
-                                       nil];
-                if (assetUrlCallback!=nil)
-                {
-                    [self _fireEventToListener:@"onAsset" withObject:event listener:assetUrlCallback thisObject:nil];
-                }
+            [[NSFileManager defaultManager] createFileAtPath:filename contents:nil attributes:nil];
+            NSOutputStream *outPutStream = [NSOutputStream outputStreamToFileAtPath:filename append:YES];
+            [outPutStream open];
+            
+            long long offset = 0;
+            long long bytesRead = 0;
+            
+            NSError *error;
+            uint8_t * buffer = malloc(131072);
+            while (offset<[[result defaultRepresentation] size] && [outPutStream hasSpaceAvailable]) {
+                bytesRead = [rep getBytes:buffer fromOffset:offset length:131072 error:&error];
+                [outPutStream write:buffer maxLength:bytesRead];
+                offset = offset+bytesRead;
+            }
+            [outPutStream close];
+            free(buffer);
+            
+
+            UIImage *largeimage;
+            largeimage = [UIImage imageWithCGImage:[rep fullScreenImage]];
+            UIImage *thumbnail;
+            thumbnail = [UIImage imageWithCGImage:[result thumbnail]];
+            //NSString *size = [rep size];
+                
+            NSDictionary *event = [NSDictionary
+                                    dictionaryWithObjectsAndKeys:
+                                    [[self exif:result] autorelease],
+                                    @"meta",
+                                    [[[TiBlob alloc] initWithImage:largeimage] autorelease],
+                                    @"image",
+                                    [[[TiBlob alloc] initWithImage:thumbnail] autorelease],
+                                    @"thumbnail",
+                                    sUrl,
+                                    @"url",
+                                    filename,
+                                    @"filename",
+                                    NUMINT([[result defaultRepresentation] size]),
+                                    @"size",
+                                    nil];
+            if (assetUrlCallback!=nil)
+            {
+                [self _fireEventToListener:@"onAsset" withObject:event listener:assetUrlCallback thisObject:nil];
+            }
             
         }
     };
@@ -326,18 +355,22 @@
     thumbCallback  = [onthumb retain];
     void (^assetGroupEnumerator) (ALAssetsGroup *, BOOL *) = ^(ALAssetsGroup *group, BOOL *stop){
         if(group != nil) {
+            // Select from the back of the list first to reverse the pagination order
+            int numAssets = [group numberOfAssets];
+            int max = numAssets >= fromIndex ? numAssets - fromIndex : 0;
+            int min = numAssets >= toIndex ? numAssets - toIndex : 0;
             [group enumerateAssetsUsingBlock:^(ALAsset *result, NSUInteger index, BOOL *stop) {
                 if( result != nil )
                 {
-                    if( (index >= fromIndex) && (index <= toIndex) ){
+                    if( (index >= min) && (index < max) ){
                         NSURL *url = [[result defaultRepresentation] url];
                         NSString *sUrl = [url absoluteString];
                             UIImage *thumbnail = [UIImage imageWithCGImage:[result thumbnail]];
                         
                             NSDictionary *event = [NSDictionary 
                                                    dictionaryWithObjectsAndKeys:
-                                                   [[self exif:result] autorelease],
-                                                   @"meta",
+                                                   //[[self exif:result] autorelease],
+                                                   //@"meta",
                                                    [[[TiBlob alloc] initWithImage:thumbnail] autorelease],
                                                    @"thumbnail",
                                                    NUMINT(index),
@@ -345,7 +378,8 @@
                                                    sUrl,
                                                    @"url",
                                                    nil];
-                            [assets addObject:event];
+                            //[assets addObject:event];
+                            [assets insertObject:event atIndex:0]; // insert here to get reverse order
                     }
                 } else {
                     if (thumbCallback!=nil)
